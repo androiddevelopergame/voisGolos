@@ -652,6 +652,25 @@ class VoiceClonerXTTSApp:
             except Exception as e:
                 print(f"Ошибка при анализе файла: {e}")
     
+    def split_text_by_limit(self, text, limit=180):
+        """Разбить текст на части по лимиту символов"""
+        words = text.split()
+        parts = []
+        current_part = ""
+        
+        for word in words:
+            if len(current_part + " " + word) <= limit:
+                current_part += (" " + word) if current_part else word
+            else:
+                if current_part:
+                    parts.append(current_part)
+                current_part = word
+        
+        if current_part:
+            parts.append(current_part)
+        
+        return parts if parts else [text[:limit]]
+    
     def process_text(self):
         """Обработка текста и создание аудио с клонированием голоса через XTTS v2"""
         if self.is_processing:
@@ -666,6 +685,21 @@ class VoiceClonerXTTSApp:
             messagebox.showwarning("Предупреждение", "Введите текст для озвучки!")
             return
         
+        # Проверяем длину текста
+        if len(text) > 180:
+            result = messagebox.askyesno(
+                "Длинный текст", 
+                f"Текст содержит {len(text)} символов (лимит: 180).\n\n"
+                "XTTS v2 обрежет текст до 180 символов.\n\n"
+                "Хотите разбить текст на части для полной озвучки?"
+            )
+            
+            if result:
+                # Разбиваем текст на части
+                text_parts = self.split_text_by_limit(text, 180)
+                self.process_long_text(text_parts)
+                return
+        
         # Запуск обработки в отдельном потоке
         self.is_processing = True
         self.process_button.config(state="disabled")
@@ -674,6 +708,96 @@ class VoiceClonerXTTSApp:
         thread = threading.Thread(target=self._process_text_thread, args=(text,))
         thread.daemon = True
         thread.start()
+    
+    def process_long_text(self, text_parts):
+        """Обработка длинного текста по частям"""
+        if not self.xtts_model:
+            messagebox.showerror("Ошибка", "XTTS v2 модель не загружена!")
+            return
+        
+        self.is_processing = True
+        self.process_button.config(state="disabled")
+        self.progress_var.set(f"Генерация голоса (0/{len(text_parts)} частей)...")
+        self.progress_bar.start()
+        
+        def generate_parts():
+            try:
+                audio_parts = []
+                
+                for i, part in enumerate(text_parts):
+                    self.root.after(0, lambda p=i+1, t=len(text_parts): 
+                        self.progress_var.set(f"Генерация голоса ({p}/{t} частей)..."))
+                    
+                    # Создаем временный файл для части
+                    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_file:
+                        part_path = tmp_file.name
+                    
+                    # Генерация части
+                    self.xtts_model.tts_to_file(
+                        text=part,
+                        speaker_wav=self.voice_file_path.get(),
+                        language="ru",
+                        file_path=part_path,
+                        speed=self.speed_var.get()
+                    )
+                    
+                    audio_parts.append(part_path)
+                
+                # Объединяем все части в один файл
+                self.combine_audio_parts(audio_parts)
+                
+                self.root.after(0, lambda: self.progress_var.set("Готово!"))
+                self.root.after(0, lambda: messagebox.showinfo("Успех", 
+                    f"Голос сгенерирован успешно! Обработано {len(text_parts)} частей."))
+                
+            except Exception as e:
+                error_msg = f"Ошибка генерации: {str(e)}"
+                self.root.after(0, lambda: self.progress_var.set("Ошибка!"))
+                self.root.after(0, lambda: messagebox.showerror("Ошибка", error_msg))
+            finally:
+                self.is_processing = False
+                self.root.after(0, lambda: self.progress_bar.stop())
+                self.root.after(0, lambda: self.process_button.config(state="normal"))
+        
+        threading.Thread(target=generate_parts, daemon=True).start()
+    
+    def combine_audio_parts(self, audio_parts):
+        """Объединение аудио частей в один файл"""
+        try:
+            import soundfile as sf
+            import numpy as np
+            
+            combined_audio = []
+            sample_rate = None
+            
+            for part_path in audio_parts:
+                y, sr = sf.read(part_path)
+                if sample_rate is None:
+                    sample_rate = sr
+                
+                combined_audio.append(y)
+                
+                # Удаляем временный файл части
+                try:
+                    os.remove(part_path)
+                except:
+                    pass
+            
+            # Объединяем все части
+            final_audio = np.concatenate(combined_audio)
+            
+            # Сохраняем результат
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_file:
+                output_path = tmp_file.name
+            
+            sf.write(output_path, final_audio, sample_rate)
+            self.output_path.set(output_path)
+            
+        except Exception as e:
+            print(f"Ошибка объединения аудио: {e}")
+            # Если не удалось объединить, используем первую часть
+            if audio_parts:
+                self.output_path.set(audio_parts[0])
     
     def process_text_with_stress(self, text):
         """Обработка текста с учетом ударений и специальных символов"""
