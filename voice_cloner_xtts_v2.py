@@ -126,7 +126,7 @@ class VoiceClonerXTTSApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Клонирование Голоса - XTTS v2 + Windows TTS")
-        self.root.geometry("1200x1000")
+        self.root.geometry("1000x800")
         
         # Переменные
         self.voice_file_path = tk.StringVar()
@@ -138,9 +138,37 @@ class VoiceClonerXTTSApp:
         self.is_recording = False
         self.recording_thread = None
         
+        # Расширенные настройки по умолчанию
+        self.advanced_settings = {
+            'temperature': 0.7,
+            'length_penalty': 1.0,
+            'repetition_penalty': 2.0,
+            'top_k': 50,
+            'top_p': 0.8,
+            'voice_clarity': 0.75,
+            'stability': 0.5,
+            'similarity_boost': 0.75
+        }
+        
         # Аудио параметры - улучшенные для качества
         self.CHUNK = 2048  # Увеличили размер чанка для лучшего качества
-        self.FORMAT = pyaudio.paInt16  # Стандартный формат для совместимости
+        
+        # Определяем формат аудио с проверкой доступности
+        try:
+            if hasattr(pyaudio, 'paInt16'):
+                self.FORMAT = pyaudio.paInt16
+            elif hasattr(pyaudio, 'paInt32'):
+                self.FORMAT = pyaudio.paInt32
+            elif hasattr(pyaudio, 'paInt8'):
+                self.FORMAT = pyaudio.paInt8
+            else:
+                # Если ничего не найдено, используем числовое значение
+                self.FORMAT = 1  # paInt16 = 1
+                print("⚠️ Используем числовое значение для формата аудио")
+        except Exception as e:
+            print(f"⚠️ Ошибка определения формата аудио: {e}")
+            self.FORMAT = 1  # paInt16 = 1
+        
         self.CHANNELS = 1
         self.RATE = 48000  # Увеличили частоту дискретизации для лучших высоких частот
         
@@ -151,6 +179,7 @@ class VoiceClonerXTTSApp:
         except Exception as e:
             print(f"⚠️ Ошибка инициализации PyAudio: {e}")
             print("💡 Для записи голоса установите pyaudio: pip install pyaudio")
+            print("💡 Или переустановите: pip uninstall pyaudio && pip install pyaudio")
             self.audio = None
         
         # Создание интерфейса
@@ -164,110 +193,153 @@ class VoiceClonerXTTSApp:
         main_frame = ttk.Frame(self.root, padding="10")
         main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         
-        # Настройка весов
+        # Настройка весов для двухколоночной компоновки
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
-        main_frame.columnconfigure(1, weight=1)
+        main_frame.columnconfigure(0, weight=1)  # Левая колонка
+        main_frame.columnconfigure(1, weight=1)  # Правая колонка
         
         # Заголовок
         title_label = ttk.Label(main_frame, text="Клонирование Голоса - XTTS v2 + Windows TTS", 
                                font=("Arial", 18, "bold"))
-        title_label.grid(row=0, column=0, columnspan=3, pady=(0, 20))
+        title_label.grid(row=0, column=0, columnspan=2, pady=(0, 15))
         
         # Информация о версии
         info_label = ttk.Label(main_frame, text="XTTS v2 (клонирование + русский) + Системный TTS Windows", 
                               font=("Arial", 10), foreground="blue")
-        info_label.grid(row=1, column=0, columnspan=3, pady=(0, 20))
+        info_label.grid(row=1, column=0, columnspan=2, pady=(0, 15))
         
         # Важное примечание
         note_label = ttk.Label(main_frame, 
                               text="🇷🇺 РУССКИЙ TTS: XTTS v2 с клонированием голоса + Windows TTS для сравнения", 
                               font=("Arial", 10, "bold"), foreground="green")
-        note_label.grid(row=2, column=0, columnspan=3, pady=(0, 20))
+        note_label.grid(row=2, column=0, columnspan=2, pady=(0, 15))
         
-        # Секция записи голоса
-        recording_frame = ttk.LabelFrame(main_frame, text="Запись голоса через микрофон", padding="10")
-        recording_frame.grid(row=3, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(0, 20))
+        # ЛЕВАЯ КОЛОНКА - Запись и загрузка файлов
+        left_frame = ttk.Frame(main_frame)
+        left_frame.grid(row=3, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), padx=(0, 10))
+        left_frame.columnconfigure(0, weight=1)
+        
+        # Секция записи голоса (компактная)
+        recording_frame = ttk.LabelFrame(left_frame, text="🎤 Запись голоса", padding="8")
+        recording_frame.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
         recording_frame.columnconfigure(1, weight=1)
         
-        # Кнопки записи
-        ttk.Label(recording_frame, text="Запись голоса:").grid(row=0, column=0, sticky=tk.W, pady=5)
+        # Кнопки записи в одну строку
+        record_buttons_frame = ttk.Frame(recording_frame)
+        record_buttons_frame.grid(row=0, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
         
-        button_frame = ttk.Frame(recording_frame)
-        button_frame.grid(row=0, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=5)
-        
-        self.record_button = ttk.Button(button_frame, text="🎤 Начать запись", 
+        self.record_button = ttk.Button(record_buttons_frame, text="🎤 Запись", 
                                        command=self.start_recording, style="Accent.TButton")
-        self.record_button.pack(side=tk.LEFT, padx=(0, 10))
+        self.record_button.pack(side=tk.LEFT, padx=(0, 5))
         
-        self.stop_button = ttk.Button(button_frame, text="⏹ Остановить запись", 
+        self.stop_button = ttk.Button(record_buttons_frame, text="⏹ Стоп", 
                                      command=self.stop_recording, state="disabled")
         self.stop_button.pack(side=tk.LEFT, padx=(0, 10))
         
-        # Индикатор записи
-        self.recording_indicator = ttk.Label(button_frame, text="", font=("Arial", 12))
-        self.recording_indicator.pack(side=tk.LEFT, padx=(10, 0))
+        # Индикатор записи и таймер
+        self.recording_indicator = ttk.Label(record_buttons_frame, text="", font=("Arial", 10))
+        self.recording_indicator.pack(side=tk.LEFT, padx=(5, 0))
         
-        # Таймер записи
         self.recording_timer = tk.StringVar(value="00:00")
-        ttk.Label(button_frame, textvariable=self.recording_timer, 
-                 font=("Arial", 12, "bold")).pack(side=tk.LEFT, padx=(10, 0))
+        ttk.Label(record_buttons_frame, textvariable=self.recording_timer, 
+                 font=("Arial", 10, "bold")).pack(side=tk.LEFT, padx=(5, 0))
         
-        # Информация о записи
-        recording_info = """🎤 ИНСТРУКЦИЯ ПО ЗАПИСИ ВЫСОКОГО КАЧЕСТВА:
- • Используйте качественный микрофон (не встроенный)
- • Говорите четко и естественно в микрофон
- • Рекомендуется 60-120 секунд разнообразной речи
- • Избегайте фонового шума и эха
- • Говорите именно на русском языке
- • Расстояние до микрофона: 10-20 см
- • Говорите с нормальной громкостью"""
+        # Компактная инструкция по записи
+        recording_info = """🎤 КАЧЕСТВЕННАЯ ЗАПИСЬ:
+• Качественный микрофон (не встроенный)
+• Четкая речь на русском языке
+• 60-120 сек разнообразной речи
+• Расстояние 10-20 см от микрофона
+• Без фонового шума"""
         
         ttk.Label(recording_frame, text=recording_info, 
-                 font=("Arial", 9), foreground="gray", justify=tk.LEFT).grid(
-            row=1, column=0, columnspan=3, sticky=tk.W, pady=(10, 0))
+                 font=("Arial", 8), foreground="gray", justify=tk.LEFT).grid(
+            row=1, column=0, columnspan=2, sticky=tk.W, pady=(5, 0))
         
-        # Секция загрузки файла
-        file_frame = ttk.LabelFrame(main_frame, text="🎵 ЗАГРУЗИТЬ ГОТОВЫЙ ФАЙЛ С ГОЛОСОМ", padding="15")
-        file_frame.grid(row=4, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(0, 20))
+        # Секция загрузки файла (компактная)
+        file_frame = ttk.LabelFrame(left_frame, text="📁 Загрузить файл с голосом", padding="8")
+        file_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
         file_frame.columnconfigure(1, weight=1)
         
-        # БОЛЬШАЯ ЗАМЕТНАЯ КНОПКА СВЕРХУ!
+        # Большая кнопка выбора файла
         big_button = tk.Button(file_frame, text="📁 ВЫБРАТЬ ФАЙЛ С ГОЛОСОМ", 
                               command=self.select_voice_file, 
-                              bg="red", fg="white", font=("Arial", 16, "bold"),
-                              relief=tk.RAISED, bd=5, height=2, width=25)
-        big_button.grid(row=0, column=0, columnspan=3, pady=10)
+                              bg="red", fg="white", font=("Arial", 14, "bold"),
+                              relief=tk.RAISED, bd=3, height=2)
+        big_button.grid(row=0, column=0, columnspan=2, pady=5, sticky=(tk.W, tk.E))
         
         # Поле для отображения выбранного файла
-        ttk.Label(file_frame, text="Выбранный файл:").grid(row=1, column=0, sticky=tk.W, pady=5)
+        ttk.Label(file_frame, text="Файл:").grid(row=1, column=0, sticky=tk.W, pady=2)
+        ttk.Entry(file_frame, textvariable=self.voice_file_path, state="readonly").grid(
+            row=1, column=1, sticky=(tk.W, tk.E), pady=2)
         
-        file_display_frame = ttk.Frame(file_frame)
-        file_display_frame.grid(row=1, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=5)
-        file_display_frame.columnconfigure(0, weight=1)
+        # Форматы файлов
+        ttk.Label(file_frame, text="Форматы: WAV, MP3, FLAC, M4A", 
+                 font=("Arial", 8), foreground="blue").grid(row=2, column=0, columnspan=2, 
+                                                          sticky=tk.W, pady=(2, 0))
         
-        ttk.Entry(file_display_frame, textvariable=self.voice_file_path, state="readonly").grid(
-            row=0, column=0, sticky=(tk.W, tk.E), padx=(0, 5))
+        # Настройки (компактные)
+        settings_frame = ttk.LabelFrame(left_frame, text="⚙️ Настройки", padding="8")
+        settings_frame.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
+        settings_frame.columnconfigure(1, weight=1)
         
-        # Дополнительная информация о поддерживаемых форматах
-        ttk.Label(file_frame, text="Поддерживаемые форматы: WAV, MP3, FLAC, M4A", 
-                 font=("Arial", 10), foreground="blue").grid(row=2, column=0, columnspan=3, 
-                                                          sticky=tk.W, pady=(10, 0))
+        # Скорость речи
+        ttk.Label(settings_frame, text="Скорость:").grid(row=0, column=0, sticky=tk.W)
+        self.speed_var = tk.DoubleVar(value=0.8)
+        speed_scale = ttk.Scale(settings_frame, from_=0.2, to=1.0, 
+                               variable=self.speed_var, orient=tk.HORIZONTAL)
+        speed_scale.grid(row=0, column=1, sticky=(tk.W, tk.E), padx=(5, 0))
+        speed_label = ttk.Label(settings_frame, text="0.8", width=3)
+        speed_label.grid(row=0, column=2)
         
-        # ДОПОЛНИТЕЛЬНАЯ КНОПКА ВЫБОРА ФАЙЛА - НАД ТЕКСТОМ!
-        extra_file_button = tk.Button(main_frame, text="🔥 ЗАГРУЗИТЬ ФАЙЛ С ГОЛОСОМ 🔥", 
-                                     command=self.select_voice_file, 
-                                     bg="orange", fg="black", font=("Arial", 14, "bold"),
-                                     relief=tk.RAISED, bd=4, height=2)
-        extra_file_button.grid(row=5, column=0, columnspan=3, pady=10)
+        # Привязка обновления лейбла
+        speed_scale.configure(command=lambda x: speed_label.configure(text=f"{float(x):.1f}"))
+        
+        # Кнопки генерации (компактные)
+        generate_frame = ttk.LabelFrame(left_frame, text="🎯 Генерация", padding="8")
+        generate_frame.grid(row=3, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
+        generate_frame.columnconfigure(0, weight=1)
+        generate_frame.columnconfigure(1, weight=1)
+        
+        self.process_button = ttk.Button(generate_frame, text="🎯 XTTS v2 Клонировать", 
+                                        command=self.process_text, style="Accent.TButton")
+        self.process_button.grid(row=0, column=0, padx=(0, 5), pady=2, sticky=(tk.W, tk.E))
+        
+        self.standard_button = ttk.Button(generate_frame, text="🇷🇺 Windows TTS", 
+                                         command=self.generate_windows_voice)
+        self.standard_button.grid(row=0, column=1, padx=(5, 0), pady=2, sticky=(tk.W, tk.E))
+        
+        # Кнопка настроек
+        settings_button = ttk.Button(generate_frame, text="⚙️ Настройки", 
+                                    command=self.show_advanced_settings, style="Accent.TButton")
+        settings_button.grid(row=1, column=0, columnspan=2, pady=2, sticky=(tk.W, tk.E))
+        
+
+        
+        # ПРАВАЯ КОЛОНКА - Текст и воспроизведение
+        right_frame = ttk.Frame(main_frame)
+        right_frame.grid(row=3, column=1, sticky=(tk.W, tk.E, tk.N, tk.S), padx=(10, 0))
+        right_frame.columnconfigure(0, weight=1)
+        right_frame.rowconfigure(1, weight=1)  # Текстовое поле растягивается
         
         # Текст для озвучки
-        ttk.Label(main_frame, text="Текст для озвучки:").grid(
-            row=6, column=0, sticky=tk.W, pady=(20, 5))
+        text_label_frame = ttk.Frame(right_frame)
+        text_label_frame.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=(0, 5))
+        text_label_frame.columnconfigure(0, weight=1)
         
-        self.text_input = scrolledtext.ScrolledText(main_frame, height=6, width=80)
-        self.text_input.grid(row=6, column=1, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), 
-                             pady=5)
+        ttk.Label(text_label_frame, text="📝 Текст для озвучки:").grid(row=0, column=0, sticky=tk.W)
+        
+        # Кнопки справки рядом с заголовком
+        ttk.Button(text_label_frame, text="🎯 Справка", 
+                   command=self.show_stress_help, style="Accent.TButton").grid(row=0, column=1, padx=(10, 0))
+        
+        ttk.Button(text_label_frame, text="🧪 Тест", 
+                   command=self.test_stress_processing).grid(row=0, column=2, padx=(5, 0))
+        
+        # Текстовое поле (растягивается)
+        self.text_input = scrolledtext.ScrolledText(right_frame, height=12, width=50)
+        self.text_input.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10))
         
         # Пример текста с ударениями
         example_text = """Привет! Это пример текста для озвучки вашим клонированным голосом.
@@ -301,95 +373,53 @@ class VoiceClonerXTTSApp:
 Теперь у вас есть настоящий русский TTS с клонированием голоса!"""
         self.text_input.insert(tk.END, example_text)
         
-        # Кнопки справки и тестирования
-        help_button_frame = ttk.Frame(main_frame)
-        help_button_frame.grid(row=7, column=0, columnspan=3, pady=5)
-        
-        ttk.Button(help_button_frame, text="🎯 Справка по ударениям", 
-                   command=self.show_stress_help, style="Accent.TButton").pack(side=tk.LEFT, padx=(0, 10))
-        
-        ttk.Button(help_button_frame, text="🧪 Тест ударений", 
-                   command=self.test_stress_processing).pack(side=tk.LEFT)
-        
-        # Настройки
-        settings_frame = ttk.LabelFrame(main_frame, text="Настройки", padding="10")
-        settings_frame.grid(row=8, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=20)
-        settings_frame.columnconfigure(1, weight=1)
-        
-        # Скорость речи
-        ttk.Label(settings_frame, text="Скорость речи:").grid(row=0, column=0, sticky=tk.W)
-        self.speed_var = tk.DoubleVar(value=0.8)
-        speed_scale = ttk.Scale(settings_frame, from_=0.2, to=1.0, 
-                               variable=self.speed_var, orient=tk.HORIZONTAL)
-        speed_scale.grid(row=0, column=1, sticky=(tk.W, tk.E), padx=(10, 0))
-        speed_label = ttk.Label(settings_frame, text="0.8")
-        speed_label.grid(row=0, column=2)
-        
-        # Привязка обновления лейбла
-        speed_scale.configure(command=lambda x: speed_label.configure(text=f"{float(x):.1f}"))
-        
-        # Кнопки генерации
-        button_frame = ttk.Frame(main_frame)
-        button_frame.grid(row=9, column=0, columnspan=3, pady=20)
-        
-        self.process_button = ttk.Button(button_frame, text="🎯 XTTS v2 Клонировать голос", 
-                                        command=self.process_text, style="Accent.TButton")
-        self.process_button.pack(side=tk.LEFT, padx=(0, 10))
-        
-        self.standard_button = ttk.Button(button_frame, text="🇷🇺 Windows TTS голос", 
-                                         command=self.generate_windows_voice)
-        self.standard_button.pack(side=tk.LEFT, padx=(0, 10))
-        
-        # Дублирующая кнопка выбора файла
-        duplicate_file_button = ttk.Button(button_frame, text="📁 Выбрать файл", 
-                                          command=self.select_voice_file, style="Accent.TButton")
-        duplicate_file_button.pack(side=tk.LEFT, padx=(0, 10))
-        
-        # Кнопки воспроизведения
-        playback_frame = ttk.LabelFrame(main_frame, text="Воспроизведение", padding="10")
-        playback_frame.grid(row=10, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=20)
+        # Кнопки воспроизведения (компактные)
+        playback_frame = ttk.LabelFrame(right_frame, text="🎵 Воспроизведение", padding="8")
+        playback_frame.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
         playback_frame.columnconfigure(1, weight=1)
         
         # XTTS v2 голос
-        ttk.Label(playback_frame, text="XTTS v2 клонированный голос:").grid(row=0, column=0, sticky=tk.W, pady=5)
+        ttk.Label(playback_frame, text="XTTS v2:").grid(row=0, column=0, sticky=tk.W, pady=2)
         cloned_buttons = ttk.Frame(playback_frame)
-        cloned_buttons.grid(row=0, column=1, sticky=(tk.W, tk.E), pady=5)
+        cloned_buttons.grid(row=0, column=1, sticky=(tk.W, tk.E), pady=2)
         
         ttk.Button(cloned_buttons, text="▶️ Воспроизвести", 
-                   command=self.play_cloned_audio).pack(side=tk.LEFT, padx=(0, 10))
+                   command=self.play_cloned_audio).pack(side=tk.LEFT, padx=(0, 5))
         ttk.Button(cloned_buttons, text="💾 Сохранить", 
-                   command=self.save_cloned_audio).pack(side=tk.LEFT, padx=(0, 10))
-        ttk.Button(cloned_buttons, text="📊 Спектрограмма", 
+                   command=self.save_cloned_audio).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(cloned_buttons, text="📊 Спектр", 
                    command=self.show_cloned_spectrogram).pack(side=tk.LEFT)
         
         # Стандартный голос
-        ttk.Label(playback_frame, text="Windows TTS голос:").grid(row=1, column=0, sticky=tk.W, pady=5)
+        ttk.Label(playback_frame, text="Windows TTS:").grid(row=1, column=0, sticky=tk.W, pady=2)
         standard_buttons = ttk.Frame(playback_frame)
-        standard_buttons.grid(row=1, column=1, sticky=(tk.W, tk.E), pady=5)
+        standard_buttons.grid(row=1, column=1, sticky=(tk.W, tk.E), pady=2)
         
         ttk.Button(standard_buttons, text="▶️ Воспроизвести", 
-                   command=self.play_standard_audio).pack(side=tk.LEFT, padx=(0, 10))
+                   command=self.play_standard_audio).pack(side=tk.LEFT, padx=(0, 5))
         ttk.Button(standard_buttons, text="💾 Сохранить", 
-                   command=self.save_standard_audio).pack(side=tk.LEFT, padx=(0, 10))
-        ttk.Button(standard_buttons, text="📊 Спектрограмма", 
+                   command=self.save_standard_audio).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(standard_buttons, text="📊 Спектр", 
                    command=self.show_standard_spectrogram).pack(side=tk.LEFT)
+        
+        # НИЖНЯЯ ЧАСТЬ - Прогресс и статус (на всю ширину)
+        bottom_frame = ttk.Frame(main_frame)
+        bottom_frame.grid(row=4, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(10, 0))
+        bottom_frame.columnconfigure(0, weight=1)
         
         # Прогресс
         self.progress_var = tk.StringVar(value="Готов к работе")
-        ttk.Label(main_frame, textvariable=self.progress_var).grid(
-            row=11, column=0, columnspan=3, pady=10)
+        ttk.Label(bottom_frame, textvariable=self.progress_var).grid(
+            row=0, column=0, pady=5)
         
-        self.progress_bar = ttk.Progressbar(main_frame, mode='indeterminate')
-        self.progress_bar.grid(row=12, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
+        self.progress_bar = ttk.Progressbar(bottom_frame, mode='indeterminate')
+        self.progress_bar.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=2)
         
         # Статус моделей
         self.model_status = tk.StringVar(value="Статус моделей: Загрузка...")
-        ttk.Label(main_frame, textvariable=self.model_status, 
+        ttk.Label(bottom_frame, textvariable=self.model_status, 
                  font=("Arial", 9), foreground="green").grid(
-            row=13, column=0, columnspan=3, pady=5)
-        
-        # Настройка весов для растягивания
-        main_frame.rowconfigure(5, weight=1)
+            row=2, column=0, pady=2)
     
     def init_models(self):
         """Инициализация моделей TTS"""
@@ -1418,6 +1448,308 @@ class VoiceClonerXTTSApp:
         
         text_widget.insert(tk.END, help_text)
         text_widget.config(state=tk.DISABLED)  # Делаем только для чтения
+    
+    def show_advanced_settings(self):
+        """Показать окно с расширенными настройками"""
+        settings_window = tk.Toplevel(self.root)
+        settings_window.title("⚙️ Расширенные настройки XTTS v2")
+        settings_window.geometry("700x600")
+        settings_window.resizable(True, True)
+        
+        # Создание фрейма с прокруткой
+        main_frame = ttk.Frame(settings_window, padding="20")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Заголовок
+        title_label = ttk.Label(main_frame, text="⚙️ РАСШИРЕННЫЕ НАСТРОЙКИ XTTS v2", 
+                               font=("Arial", 14, "bold"))
+        title_label.pack(pady=(0, 20))
+        
+        # Создание канваса с прокруткой
+        canvas = tk.Canvas(main_frame)
+        scrollbar = ttk.Scrollbar(main_frame, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas)
+        
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        # Переменные для настроек
+        self.speed_var_advanced = tk.DoubleVar(value=self.speed_var.get())
+        self.temperature_var = tk.DoubleVar(value=0.7)
+        self.length_penalty_var = tk.DoubleVar(value=1.0)
+        self.repetition_penalty_var = tk.DoubleVar(value=2.0)
+        self.top_k_var = tk.IntVar(value=50)
+        self.top_p_var = tk.DoubleVar(value=0.8)
+        self.cond_free_k_var = tk.DoubleVar(value=2.0)
+        self.cond_free_guidance_var = tk.DoubleVar(value=3.0)
+        self.voice_clarity_var = tk.DoubleVar(value=0.75)
+        self.stability_var = tk.DoubleVar(value=0.5)
+        self.similarity_boost_var = tk.DoubleVar(value=0.75)
+        
+        # Секция 1: Основные настройки речи
+        speech_frame = ttk.LabelFrame(scrollable_frame, text="🎤 Основные настройки речи", padding="15")
+        speech_frame.pack(fill=tk.X, pady=(0, 15))
+        
+        # Скорость речи
+        speed_frame = ttk.Frame(speech_frame)
+        speed_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        ttk.Label(speed_frame, text="Скорость речи:", font=("Arial", 10, "bold")).pack(anchor=tk.W)
+        ttk.Label(speed_frame, text="Влияет на скорость произношения текста. Меньше = медленнее, больше = быстрее.", 
+                 font=("Arial", 9), foreground="gray").pack(anchor=tk.W)
+        
+        speed_scale_frame = ttk.Frame(speed_frame)
+        speed_scale_frame.pack(fill=tk.X, pady=(5, 0))
+        
+        speed_scale = ttk.Scale(speed_scale_frame, from_=0.2, to=2.0, 
+                               variable=self.speed_var_advanced, orient=tk.HORIZONTAL)
+        speed_scale.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 10))
+        
+        speed_label = ttk.Label(speed_scale_frame, text=f"{self.speed_var_advanced.get():.1f}", width=5)
+        speed_label.pack(side=tk.RIGHT)
+        
+        speed_scale.configure(command=lambda x: speed_label.configure(text=f"{float(x):.1f}"))
+        
+        # Температура
+        temp_frame = ttk.Frame(speech_frame)
+        temp_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        ttk.Label(temp_frame, text="Температура (креативность):", font=("Arial", 10, "bold")).pack(anchor=tk.W)
+        ttk.Label(temp_frame, text="Контролирует случайность генерации. Низкая = предсказуемо, высокая = креативно.", 
+                 font=("Arial", 9), foreground="gray").pack(anchor=tk.W)
+        
+        temp_scale_frame = ttk.Frame(temp_frame)
+        temp_scale_frame.pack(fill=tk.X, pady=(5, 0))
+        
+        temp_scale = ttk.Scale(temp_scale_frame, from_=0.1, to=1.5, 
+                              variable=self.temperature_var, orient=tk.HORIZONTAL)
+        temp_scale.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 10))
+        
+        temp_label = ttk.Label(temp_scale_frame, text=f"{self.temperature_var.get():.1f}", width=5)
+        temp_label.pack(side=tk.RIGHT)
+        
+        temp_scale.configure(command=lambda x: temp_label.configure(text=f"{float(x):.1f}"))
+        
+        # Секция 2: Настройки качества
+        quality_frame = ttk.LabelFrame(scrollable_frame, text="🎵 Настройки качества", padding="15")
+        quality_frame.pack(fill=tk.X, pady=(0, 15))
+        
+        # Штраф за длину
+        length_frame = ttk.Frame(quality_frame)
+        length_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        ttk.Label(length_frame, text="Штраф за длину:", font=("Arial", 10, "bold")).pack(anchor=tk.W)
+        ttk.Label(length_frame, text="Предотвращает слишком длинные фразы. Меньше = длиннее фразы, больше = короче.", 
+                 font=("Arial", 9), foreground="gray").pack(anchor=tk.W)
+        
+        length_scale_frame = ttk.Frame(length_frame)
+        length_scale_frame.pack(fill=tk.X, pady=(5, 0))
+        
+        length_scale = ttk.Scale(length_scale_frame, from_=0.5, to=2.0, 
+                                variable=self.length_penalty_var, orient=tk.HORIZONTAL)
+        length_scale.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 10))
+        
+        length_label = ttk.Label(length_scale_frame, text=f"{self.length_penalty_var.get():.1f}", width=5)
+        length_label.pack(side=tk.RIGHT)
+        
+        length_scale.configure(command=lambda x: length_label.configure(text=f"{float(x):.1f}"))
+        
+        # Штраф за повторения
+        rep_frame = ttk.Frame(quality_frame)
+        rep_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        ttk.Label(rep_frame, text="Штраф за повторения:", font=("Arial", 10, "bold")).pack(anchor=tk.W)
+        ttk.Label(rep_frame, text="Предотвращает повторение одних и тех же слов. Меньше = больше повторений, больше = меньше.", 
+                 font=("Arial", 9), foreground="gray").pack(anchor=tk.W)
+        
+        rep_scale_frame = ttk.Frame(rep_frame)
+        rep_scale_frame.pack(fill=tk.X, pady=(5, 0))
+        
+        rep_scale = ttk.Scale(rep_scale_frame, from_=1.0, to=5.0, 
+                             variable=self.repetition_penalty_var, orient=tk.HORIZONTAL)
+        rep_scale.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 10))
+        
+        rep_label = ttk.Label(rep_scale_frame, text=f"{self.repetition_penalty_var.get():.1f}", width=5)
+        rep_label.pack(side=tk.RIGHT)
+        
+        rep_scale.configure(command=lambda x: rep_label.configure(text=f"{float(x):.1f}"))
+        
+        # Секция 3: Настройки клонирования голоса
+        voice_frame = ttk.LabelFrame(scrollable_frame, text="🎭 Настройки клонирования голоса", padding="15")
+        voice_frame.pack(fill=tk.X, pady=(0, 15))
+        
+        # Четкость голоса
+        clarity_frame = ttk.Frame(voice_frame)
+        clarity_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        ttk.Label(clarity_frame, text="Четкость голоса:", font=("Arial", 10, "bold")).pack(anchor=tk.W)
+        ttk.Label(clarity_frame, text="Влияет на четкость и разборчивость речи. Меньше = размыто, больше = четко.", 
+                 font=("Arial", 9), foreground="gray").pack(anchor=tk.W)
+        
+        clarity_scale_frame = ttk.Frame(clarity_frame)
+        clarity_scale_frame.pack(fill=tk.X, pady=(5, 0))
+        
+        clarity_scale = ttk.Scale(clarity_scale_frame, from_=0.1, to=1.0, 
+                                 variable=self.voice_clarity_var, orient=tk.HORIZONTAL)
+        clarity_scale.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 10))
+        
+        clarity_label = ttk.Label(clarity_scale_frame, text=f"{self.voice_clarity_var.get():.2f}", width=5)
+        clarity_label.pack(side=tk.RIGHT)
+        
+        clarity_scale.configure(command=lambda x: clarity_label.configure(text=f"{float(x):.2f}"))
+        
+        # Стабильность голоса
+        stability_frame = ttk.Frame(voice_frame)
+        stability_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        ttk.Label(stability_frame, text="Стабильность голоса:", font=("Arial", 10, "bold")).pack(anchor=tk.W)
+        ttk.Label(stability_frame, text="Контролирует стабильность тембра. Меньше = изменчиво, больше = стабильно.", 
+                 font=("Arial", 9), foreground="gray").pack(anchor=tk.W)
+        
+        stability_scale_frame = ttk.Frame(stability_frame)
+        stability_scale_frame.pack(fill=tk.X, pady=(5, 0))
+        
+        stability_scale = ttk.Scale(stability_scale_frame, from_=0.1, to=1.0, 
+                                   variable=self.stability_var, orient=tk.HORIZONTAL)
+        stability_scale.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 10))
+        
+        stability_label = ttk.Label(stability_scale_frame, text=f"{self.stability_var.get():.2f}", width=5)
+        stability_label.pack(side=tk.RIGHT)
+        
+        stability_scale.configure(command=lambda x: stability_label.configure(text=f"{float(x):.2f}"))
+        
+        # Схожесть с оригиналом
+        similarity_frame = ttk.Frame(voice_frame)
+        similarity_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        ttk.Label(similarity_frame, text="Схожесть с оригиналом:", font=("Arial", 10, "bold")).pack(anchor=tk.W)
+        ttk.Label(similarity_frame, text="Влияет на схожесть с исходным голосом. Меньше = менее похоже, больше = более похоже.", 
+                 font=("Arial", 9), foreground="gray").pack(anchor=tk.W)
+        
+        similarity_scale_frame = ttk.Frame(similarity_frame)
+        similarity_scale_frame.pack(fill=tk.X, pady=(5, 0))
+        
+        similarity_scale = ttk.Scale(similarity_scale_frame, from_=0.1, to=1.0, 
+                                    variable=self.similarity_boost_var, orient=tk.HORIZONTAL)
+        similarity_scale.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 10))
+        
+        similarity_label = ttk.Label(similarity_scale_frame, text=f"{self.similarity_boost_var.get():.2f}", width=5)
+        similarity_label.pack(side=tk.RIGHT)
+        
+        similarity_scale.configure(command=lambda x: similarity_label.configure(text=f"{float(x):.2f}"))
+        
+        # Секция 4: Продвинутые настройки
+        advanced_frame = ttk.LabelFrame(scrollable_frame, text="🔧 Продвинутые настройки", padding="15")
+        advanced_frame.pack(fill=tk.X, pady=(0, 15))
+        
+        # Top-K
+        topk_frame = ttk.Frame(advanced_frame)
+        topk_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        ttk.Label(topk_frame, text="Top-K (ограничение выбора):", font=("Arial", 10, "bold")).pack(anchor=tk.W)
+        ttk.Label(topk_frame, text="Ограничивает количество вариантов при выборе следующего токена. Меньше = более предсказуемо.", 
+                 font=("Arial", 9), foreground="gray").pack(anchor=tk.W)
+        
+        topk_scale_frame = ttk.Frame(topk_frame)
+        topk_scale_frame.pack(fill=tk.X, pady=(5, 0))
+        
+        topk_scale = ttk.Scale(topk_scale_frame, from_=10, to=100, 
+                              variable=self.top_k_var, orient=tk.HORIZONTAL)
+        topk_scale.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 10))
+        
+        topk_label = ttk.Label(topk_scale_frame, text=str(self.top_k_var.get()), width=5)
+        topk_label.pack(side=tk.RIGHT)
+        
+        topk_scale.configure(command=lambda x: topk_label.configure(text=str(int(float(x)))))
+        
+        # Top-P
+        topp_frame = ttk.Frame(advanced_frame)
+        topp_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        ttk.Label(topp_frame, text="Top-P (ядерная выборка):", font=("Arial", 10, "bold")).pack(anchor=tk.W)
+        ttk.Label(topp_frame, text="Контролирует разнообразие выборки. Меньше = более сфокусированно, больше = более разнообразно.", 
+                 font=("Arial", 9), foreground="gray").pack(anchor=tk.W)
+        
+        topp_scale_frame = ttk.Frame(topp_frame)
+        topp_scale_frame.pack(fill=tk.X, pady=(5, 0))
+        
+        topp_scale = ttk.Scale(topp_scale_frame, from_=0.1, to=1.0, 
+                              variable=self.top_p_var, orient=tk.HORIZONTAL)
+        topp_scale.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 10))
+        
+        topp_label = ttk.Label(topp_scale_frame, text=f"{self.top_p_var.get():.2f}", width=5)
+        topp_label.pack(side=tk.RIGHT)
+        
+        topp_scale.configure(command=lambda x: topp_label.configure(text=f"{float(x):.2f}"))
+        
+        # Кнопки управления
+        buttons_frame = ttk.Frame(scrollable_frame)
+        buttons_frame.pack(fill=tk.X, pady=(20, 0))
+        
+        ttk.Button(buttons_frame, text="💾 Применить настройки", 
+                   command=lambda: self.apply_advanced_settings(settings_window)).pack(side=tk.LEFT, padx=(0, 10))
+        
+        ttk.Button(buttons_frame, text="🔄 Сбросить к умолчаниям", 
+                   command=self.reset_advanced_settings).pack(side=tk.LEFT, padx=(0, 10))
+        
+        ttk.Button(buttons_frame, text="❌ Закрыть", 
+                   command=settings_window.destroy).pack(side=tk.RIGHT)
+        
+        # Настройка прокрутки
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # Привязка прокрутки к мыши
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        
+        canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        
+        # Отвязка при закрытии окна
+        def _on_closing():
+            canvas.unbind_all("<MouseWheel>")
+            settings_window.destroy()
+        
+        settings_window.protocol("WM_DELETE_WINDOW", _on_closing)
+    
+    def apply_advanced_settings(self, settings_window):
+        """Применить расширенные настройки"""
+        # Обновляем основные настройки
+        self.speed_var.set(self.speed_var_advanced.get())
+        
+        # Сохраняем настройки в атрибуты класса
+        self.advanced_settings = {
+            'temperature': self.temperature_var.get(),
+            'length_penalty': self.length_penalty_var.get(),
+            'repetition_penalty': self.repetition_penalty_var.get(),
+            'top_k': self.top_k_var.get(),
+            'top_p': self.top_p_var.get(),
+            'voice_clarity': self.voice_clarity_var.get(),
+            'stability': self.stability_var.get(),
+            'similarity_boost': self.similarity_boost_var.get()
+        }
+        
+        messagebox.showinfo("Настройки", "Расширенные настройки применены!")
+        settings_window.destroy()
+    
+    def reset_advanced_settings(self):
+        """Сбросить настройки к умолчаниям"""
+        self.speed_var_advanced.set(0.8)
+        self.temperature_var.set(0.7)
+        self.length_penalty_var.set(1.0)
+        self.repetition_penalty_var.set(2.0)
+        self.top_k_var.set(50)
+        self.top_p_var.set(0.8)
+        self.voice_clarity_var.set(0.75)
+        self.stability_var.set(0.5)
+        self.similarity_boost_var.set(0.75)
+        
+        messagebox.showinfo("Настройки", "Настройки сброшены к умолчаниям!")
         
         # Кнопка закрытия
         close_button = ttk.Button(main_frame, text="Закрыть", 
@@ -1536,15 +1868,32 @@ def main():
     """Главная функция приложения с обработкой ошибок дисплея"""
     try:
         print("🚀 Запуск приложения клонирования голоса...")
+        print("🖥️ Графическое окно должно появиться через несколько секунд...")
         root = tk.Tk()
+        
+        # Принудительно выводим окно на передний план
+        root.lift()
+        root.attributes('-topmost', True)
+        root.after_idle(root.attributes, '-topmost', False)
+        
         app = VoiceClonerXTTSApp(root)
         root.mainloop()
     except Exception as e:
         print(f"❌ Ошибка запуска приложения: {e}")
-        print("💡 Возможные решения:")
-        print("   1. Установите pyvirtualdisplay: pip install pyvirtualdisplay")
-        print("   2. В Google Colab установите: !apt-get install -y xvfb")
-        print("   3. Убедитесь, что у вас есть графический интерфейс")
+        
+        # Специальная обработка ошибок pyaudio
+        if "pyaudio" in str(e).lower() or "paInt16" in str(e):
+            print("💡 Проблема с PyAudio. Возможные решения:")
+            print("   1. Переустановите pyaudio: pip uninstall pyaudio && pip install pyaudio")
+            print("   2. На Windows: pipwin install pyaudio")
+            print("   3. На Linux: sudo apt-get install portaudio19-dev && pip install pyaudio")
+            print("   4. На macOS: brew install portaudio && pip install pyaudio")
+            print("   5. В Google Colab: !apt-get install portaudio19-dev && !pip install pyaudio")
+        else:
+            print("💡 Возможные решения:")
+            print("   1. Установите pyvirtualdisplay: pip install pyvirtualdisplay")
+            print("   2. В Google Colab установите: !apt-get install -y xvfb")
+            print("   3. Убедитесь, что у вас есть графический интерфейс")
         
         # Попытка альтернативного запуска
         if 'google.colab' in sys.modules:
