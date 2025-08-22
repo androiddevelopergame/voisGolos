@@ -31,10 +31,28 @@ def setup_display():
         try:
             from pyvirtualdisplay import Display
             print("🖥️ Обнаружена среда без дисплея, запускаем виртуальный дисплей...")
+            
+            # Устанавливаем переменную DISPLAY перед созданием виртуального дисплея
+            if not os.environ.get('DISPLAY'):
+                os.environ['DISPLAY'] = ':99'
+            
             display = Display(visible=0, size=(1920, 1080))
             display.start()
-            print("✅ Виртуальный дисплей успешно запущен")
-            return True
+            
+            # Проверяем, что дисплей действительно запущен
+            import subprocess
+            try:
+                result = subprocess.run(['xdpyinfo'], capture_output=True, text=True, timeout=5)
+                if result.returncode == 0:
+                    print("✅ Виртуальный дисплей успешно запущен и работает")
+                    return True
+                else:
+                    print("⚠️ Виртуальный дисплей создан, но не отвечает")
+                    return False
+            except:
+                print("✅ Виртуальный дисплей создан (xdpyinfo недоступен)")
+                return True
+                
         except ImportError:
             print("⚠️ pyvirtualdisplay не установлен. Для работы в Colab установите: pip install pyvirtualdisplay")
             print("🔄 Продолжаем без виртуального дисплея...")
@@ -48,7 +66,12 @@ def setup_display():
         return True
 
 # Запускаем настройку дисплея
-setup_display()
+display_ready = setup_display()
+
+# Если дисплей не готов, устанавливаем переменную DISPLAY вручную
+if not display_ready and not os.environ.get('DISPLAY'):
+    os.environ['DISPLAY'] = ':99'
+    print("🔧 Установлена переменная DISPLAY=:99")
 
 # Исправление для PyTorch 2.6 - добавляем все необходимые классы
 try:
@@ -117,10 +140,18 @@ class VoiceClonerXTTSApp:
         
         # Аудио параметры - улучшенные для качества
         self.CHUNK = 2048  # Увеличили размер чанка для лучшего качества
-        self.FORMAT = pyaudio.paFloat32  # Высокое качество вместо Int16
+        self.FORMAT = pyaudio.paInt16  # Стандартный формат для совместимости
         self.CHANNELS = 1
         self.RATE = 48000  # Увеличили частоту дискретизации для лучших высоких частот
-        self.audio = pyaudio.PyAudio()
+        
+        # Инициализация PyAudio с обработкой ошибок
+        try:
+            self.audio = pyaudio.PyAudio()
+            print("✅ PyAudio инициализирован успешно")
+        except Exception as e:
+            print(f"⚠️ Ошибка инициализации PyAudio: {e}")
+            print("💡 Для записи голоса установите pyaudio: pip install pyaudio")
+            self.audio = None
         
         # Создание интерфейса
         self.create_widgets()
@@ -1495,8 +1526,11 @@ class VoiceClonerXTTSApp:
     
     def __del__(self):
         """Очистка ресурсов"""
-        if hasattr(self, 'audio'):
-            self.audio.terminate()
+        if hasattr(self, 'audio') and self.audio is not None:
+            try:
+                self.audio.terminate()
+            except Exception as e:
+                print(f"⚠️ Ошибка при закрытии PyAudio: {e}")
 
 def main():
     """Главная функция приложения с обработкой ошибок дисплея"""
@@ -1511,6 +1545,30 @@ def main():
         print("   1. Установите pyvirtualdisplay: pip install pyvirtualdisplay")
         print("   2. В Google Colab установите: !apt-get install -y xvfb")
         print("   3. Убедитесь, что у вас есть графический интерфейс")
+        
+        # Попытка альтернативного запуска
+        if 'google.colab' in sys.modules:
+            print("\n🔄 Попытка альтернативного запуска для Google Colab...")
+            try:
+                # Устанавливаем переменную DISPLAY и пробуем снова
+                os.environ['DISPLAY'] = ':99'
+                print("🔧 Установлена переменная DISPLAY=:99")
+                
+                # Небольшая задержка для инициализации
+                import time
+                time.sleep(2)
+                
+                root = tk.Tk()
+                app = VoiceClonerXTTSApp(root)
+                root.mainloop()
+                return 0
+            except Exception as e2:
+                print(f"❌ Альтернативный запуск также не удался: {e2}")
+                print("💡 Для работы в Google Colab выполните:")
+                print("   !apt-get update && apt-get install -y xvfb")
+                print("   !pip install pyvirtualdisplay")
+                print("   Затем перезапустите скрипт")
+        
         return 1
     return 0
 
