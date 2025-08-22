@@ -1,8 +1,22 @@
-torch==2.6.0
-torchaudio==2.6.0
-transformers==4.30.0
-soundfile==0.12.1
-librosa==0.10.1
-numpy==1.26.2
-matplotlib==3.7.2
-pyttsx3==2.90
+# Основные зависимости для клонирования голоса
+torch>=2.0.0
+torchaudio>=2.0.0
+TTS>=0.22.0
+pyaudio>=0.2.11
+soundfile>=0.12.1
+librosa>=0.10.0
+matplotlib>=3.5.0
+numpy>=1.21.0
+pyttsx3>=2.90
+
+# Дополнительные зависимости
+scipy>=1.9.0
+scikit-learn>=1.1.0
+transformers>=4.30.0
+accelerate>=0.20.0
+
+# Для Google Colab (опционально)
+pyvirtualdisplay>=3.0
+
+# Для Windows (опционально)
+# pipwin install pyaudio  # если pyaudio не устанавливается через pip

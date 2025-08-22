@@ -34,7 +34,16 @@ class VoiceClonerWeb:
             try:
                 from torch.serialization import add_safe_globals
                 from TTS.tts.configs.xtts_config import XttsConfig
-                safe_classes = [XttsConfig]
+                from TTS.tts.models.xtts import XttsAudioConfig
+                from TTS.tts.models.xtts import XttsArgs
+                from TTS.config.shared_configs import BaseDatasetConfig
+                from TTS.tts.configs.shared_configs import CharactersConfig
+                from TTS.vocoder.configs.hifigan_config import HifiganConfig
+                
+                safe_classes = [
+                    XttsConfig, XttsAudioConfig, XttsArgs, 
+                    BaseDatasetConfig, CharactersConfig, HifiganConfig
+                ]
                 add_safe_globals(safe_classes)
                 print("✅ PyTorch safe globals добавлены")
             except Exception as e:
@@ -244,10 +253,10 @@ def main():
     
     interface = create_interface()
     
-    # Запуск с публичной ссылкой для Colab
+    # Запуск локального веб-сервера
     interface.launch(
-        share=True,  # Создает публичную ссылку
-        server_name="0.0.0.0",
+        share=False,  # Только локальный доступ
+        server_name="127.0.0.1",
         server_port=7860,
         debug=True
     )
